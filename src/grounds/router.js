@@ -23,6 +23,10 @@ function makeGroundRouter(service) {
     res.json(await service.eventTypes(req.params.venue));
   });
 
+  router.get('/settings', async (req, res) => {
+    res.json(await service.currentSettings());
+  });
+
   router.get('/venues/:venue/grounds/:ground/day', async (req, res) => {
     const { date } = parse(dayQuery, req.query);
     res.json(await service.day(req.params.venue, req.params.ground, date));

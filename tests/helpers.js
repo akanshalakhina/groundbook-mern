@@ -1,5 +1,6 @@
 'use strict';
 const { MongoMemoryReplSet } = require('mongodb-memory-server');
+const mongoose = require('mongoose');
 const request = require('supertest');
 const { connect, disconnect } = require('../src/db');
 const { seed } = require('../src/seed');
@@ -25,6 +26,12 @@ function testDatabase(name) {
     },
     /** Supertest on a fresh app; given a time, its clock stands at that time instead. */
     api: (at) => request(createApp({ settings, clock: at ? { now: () => new Date(at) } : clock })),
+    /** Empties every collection and seeds again: a fresh planner, same database. */
+    async reset() {
+      const collections = await mongoose.connection.db.collections();
+      await Promise.all(collections.map((c) => c.deleteMany({})));
+      await seed({ settings, clock });
+    },
     async stop() {
       await disconnect();
       await mongo.stop();

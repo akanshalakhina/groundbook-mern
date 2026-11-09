@@ -10,13 +10,15 @@ function shapeGround(g) {
   };
 }
 
+const VENUE = 'deccan';
+
 /** A booking as the day lists it, with its shadow; the ground is the day's own, so it is not repeated. */
 function dayLine(b, type) {
   const { bookingId, event, from, to, groundHeldFrom, groundHeldTo, state } = shape(b, type);
   return { bookingId, event, from, to, groundHeldFrom, groundHeldTo, state };
 }
 
-function makeGroundService({ repository, bookings, clock }) {
+function makeGroundService({ repository, bookings, settings, clock }) {
   async function requireVenue(venue) {
     if (!(await repository.venueExists(venue))) throw new NoSuchVenue(venue);
   }
@@ -52,7 +54,16 @@ function makeGroundService({ repository, bookings, clock }) {
     return { venue, ground: code, date: on, ...hoursOn(g, on), bookings: list };
   }
 
-  return { grounds, eventTypes, day };
+  /** The live settings: the hold the app was given, and each event type's buffers as stored now (read-only). */
+  async function currentSettings() {
+    const types = await repository.eventTypesOf(VENUE);
+    return {
+      holdHours: settings.holdHours,
+      buffers: Object.fromEntries(types.map((t) => [t.code, [t.setupMinutes, t.teardownMinutes]])),
+    };
+  }
+
+  return { grounds, eventTypes, day, currentSettings };
 }
 
 module.exports = { makeGroundService };

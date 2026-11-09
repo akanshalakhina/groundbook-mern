@@ -5,6 +5,18 @@ const venue = pathParam('venue', 'The venue slug, e.g. deccan');
 const noSuchVenue = (p) => refusal('No such venue', problem(404, '/errors/no-such-venue', 'No such venue', 'There is no venue mumbai', p));
 
 const paths = {
+  '/settings': {
+    get: {
+      tags: ['grounds'],
+      summary: 'The live settings: the hold, and the buffers of each event type (read-only)',
+      responses: {
+        200: ok('The settings', {
+          holdHours: 24,
+          buffers: { practice: [20, 20], friendly: [30, 20], league: [40, 30], athletics: [60, 45], tournament: [90, 60], school_day: [120, 120] },
+        }),
+      },
+    },
+  },
   '/venues/{venue}/grounds': {
     get: {
       tags: ['grounds'],

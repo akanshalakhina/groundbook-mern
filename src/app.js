@@ -17,7 +17,7 @@ const { makeLastRoute, errorHandler } = require('./errors/middleware');
 /** Builds the Express app. It never connects to the database and never listens: server.js and tests do that. */
 function createApp({ settings, clock }) {
   const app = express();
-  const grounds = makeGroundService({ repository: groundRepository, bookings: bookingRepository, clock });
+  const grounds = makeGroundService({ repository: groundRepository, bookings: bookingRepository, settings, clock });
   const bookings = makeBookingService({
     bookings: bookingRepository, grounds: groundRepository, events: eventRepository, settings, clock, inTransaction,
   });
