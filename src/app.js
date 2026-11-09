@@ -1,6 +1,8 @@
 'use strict';
 const express = require('express');
+const swaggerUi = require('swagger-ui-express');
 const { inTransaction } = require('./db');
+const { document } = require('./openapi');
 const groundRepository = require('./grounds/repository');
 const { makeGroundService } = require('./grounds/service');
 const { makeGroundRouter } = require('./grounds/router');
@@ -10,7 +12,7 @@ const { makeBookingService } = require('./bookings/service');
 const { makeBookingRouter } = require('./bookings/router');
 const { makeMoveService } = require('./moves/service');
 const { makeMoveRouter } = require('./moves/router');
-const { notFound, errorHandler } = require('./errors/middleware');
+const { makeLastRoute, errorHandler } = require('./errors/middleware');
 
 /** Builds the Express app. It never connects to the database and never listens: server.js and tests do that. */
 function createApp({ settings, clock }) {
@@ -24,10 +26,12 @@ function createApp({ settings, clock }) {
   });
 
   app.use(express.json());
+  app.get('/openapi.json', (req, res) => res.json(document));
+  app.use('/docs', swaggerUi.serve, swaggerUi.setup(document));
   app.use(makeGroundRouter(grounds));
   app.use(makeBookingRouter(bookings));
   app.use(makeMoveRouter(moves));
-  app.use(notFound);
+  app.use(makeLastRoute(document.paths));
   app.use(errorHandler);
   return app;
 }
