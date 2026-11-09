@@ -26,8 +26,8 @@ async function nextId(venueId) {
   return `BK${String(count + 1).padStart(4, '0')}`;
 }
 
-async function insert(booking) {
-  await Booking.create(booking);
+async function insert(booking, session) {
+  await Booking.create([booking], { session });
 }
 
 function byId(venueId, bookingId, session) {

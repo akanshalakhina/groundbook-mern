@@ -5,6 +5,7 @@ const groundRepository = require('./grounds/repository');
 const { makeGroundService } = require('./grounds/service');
 const { makeGroundRouter } = require('./grounds/router');
 const bookingRepository = require('./bookings/repository');
+const eventRepository = require('./events/repository');
 const { makeBookingService } = require('./bookings/service');
 const { makeBookingRouter } = require('./bookings/router');
 const { makeMoveService } = require('./moves/service');
@@ -15,8 +16,12 @@ const { notFound, errorHandler } = require('./errors/middleware');
 function createApp({ settings, clock }) {
   const app = express();
   const grounds = makeGroundService({ repository: groundRepository, bookings: bookingRepository, clock });
-  const bookings = makeBookingService({ bookings: bookingRepository, grounds: groundRepository, settings, clock });
-  const moves = makeMoveService({ bookings: bookingRepository, grounds: groundRepository, clock, inTransaction });
+  const bookings = makeBookingService({
+    bookings: bookingRepository, grounds: groundRepository, events: eventRepository, settings, clock, inTransaction,
+  });
+  const moves = makeMoveService({
+    bookings: bookingRepository, grounds: groundRepository, events: eventRepository, clock, inTransaction,
+  });
 
   app.use(express.json());
   app.use(makeGroundRouter(grounds));

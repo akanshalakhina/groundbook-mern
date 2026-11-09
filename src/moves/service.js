@@ -1,15 +1,15 @@
 'use strict';
 const { AlreadyStarted, Cancelled } = require('../errors');
-const { shadowOf, checkInterval, refuseClashes, requireBooking } = require('../bookings/service');
+const { shadowOf, checkInterval, refuseClashes, requireBooking, eventOf } = require('../bookings/service');
 const { wholeSecond, iso } = require('../time');
 
 const VENUE = 'deccan';
 
-function makeMoveService({ bookings, grounds, clock, inTransaction }) {
+function makeMoveService({ bookings, grounds, events, clock, inTransaction }) {
   /**
    * A booking moves to a new interval: the same checks as a request, the clash check leaving the booking itself out,
-   * and the old interval released and the new one taken in one update - all inside one transaction, so a failure
-   * leaves the booking exactly where it was. The state is kept.
+   * the old interval released and the new one taken in one update, and the moved event written - all inside one
+   * transaction, so a failure leaves the booking exactly where it was. The state is kept.
    */
   async function move(id, { from, to }) {
     return inTransaction(async (session) => {
@@ -24,6 +24,9 @@ function makeMoveService({ bookings, grounds, clock, inTransaction }) {
       checkInterval({ ground, type, now: movedAt }, fromAt, toAt);
       await refuseClashes({ bookings, grounds }, { bookingId: id, groundId: b.groundId, fromAt, toAt, type }, movedAt, session);
       await bookings.stamp(id, { fromAt, toAt, movedAt, previousFrom: b.fromAt, previousTo: b.toAt }, session);
+      await events.record(eventOf(id, 'moved', movedAt, {
+        from: fromAt, to: toAt, previousFrom: b.fromAt, previousTo: b.toAt,
+      }), session);
       const { heldFrom, heldTo } = shadowOf(fromAt, toAt, type);
       return {
         bookingId: id, from: iso(fromAt), to: iso(toAt), groundHeldFrom: iso(heldFrom), groundHeldTo: iso(heldTo),

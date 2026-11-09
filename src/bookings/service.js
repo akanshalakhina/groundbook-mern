@@ -8,6 +8,27 @@ const { wholeSecond, iso } = require('../time');
 
 const VENUE = 'deccan';
 const MINUTE = 60 * 1000;
+/** Nobody logs in: every change is made by the office. */
+const OFFICE = 'office';
+
+/** The event of a change to a booking: ids and facts, never the club. */
+function eventOf(bookingId, kind, when, data = {}) {
+  return { venueId: VENUE, bookingId, kind, at: when, actorId: OFFICE, data };
+}
+
+/** A history line: when, what, and the event's facts (times as ISO strings). */
+function line(event) {
+  const facts = Object.entries(event.data || {}).map(([k, v]) => [k, v instanceof Date ? iso(v) : v]);
+  return { at: iso(event.at), kind: event.kind, ...Object.fromEntries(facts) };
+}
+
+/** Changes the booking and writes the change's event, in one transaction. */
+function stampWithEvent({ bookings, events, inTransaction }, id, fields, event) {
+  return inTransaction(async (session) => {
+    await bookings.stamp(id, fields, session);
+    await events.record(event, session);
+  });
+}
 
 /** The ground is held from the setup before the event to the teardown after it. Derived on every read, never stored. */
 function shadowOf(fromAt, toAt, type) {
@@ -83,7 +104,7 @@ async function requireBooking(bookings, id, session) {
  * A requested booking is confirmed - only before its interval begins (by the clock, read now), and only if its shadow
  * still clashes with nothing live (a competing request may have been confirmed since).
  */
-async function confirmBooking({ bookings, grounds, clock }, id) {
+async function confirmBooking({ bookings, grounds, events, clock, inTransaction }, id) {
   const b = await requireBooking(bookings, id);
   if (b.state === 'cancelled') throw new Cancelled();
   if (b.state === 'confirmed') throw new AlreadyConfirmed();
@@ -91,7 +112,8 @@ async function confirmBooking({ bookings, grounds, clock }, id) {
   if (confirmedAt >= b.fromAt) throw new AlreadyStarted();
   const type = await grounds.eventType(VENUE, b.eventTypeId);
   await refuseClashes({ bookings, grounds }, { bookingId: id, groundId: b.groundId, fromAt: b.fromAt, toAt: b.toAt, type }, confirmedAt);
-  await bookings.stamp(id, { state: 'confirmed', confirmedAt });
+  await stampWithEvent({ bookings, events, inTransaction }, id, { state: 'confirmed', confirmedAt },
+    eventOf(id, 'confirmed', confirmedAt));
   return { bookingId: id, state: 'confirmed', confirmedAt: iso(confirmedAt) };
 }
 
@@ -99,48 +121,59 @@ async function confirmBooking({ bookings, grounds, clock }, id) {
  * A requested or confirmed booking is cancelled - only before its interval ends. Once it has begun the cancel is late:
  * allowed and flagged, and the day keeps the block rather than giving the hour back.
  */
-async function cancelBooking({ bookings, clock }, id) {
+async function cancelBooking({ bookings, events, clock, inTransaction }, id) {
   const b = await requireBooking(bookings, id);
   if (b.state === 'cancelled') throw new AlreadyCancelled();
   const cancelledAt = wholeSecond(clock.now());
   if (cancelledAt >= b.toAt) throw new AlreadyOver();
   const late = cancelledAt >= b.fromAt;
-  await bookings.stamp(id, { state: 'cancelled', cancelledAt, lateCancel: late });
+  await stampWithEvent({ bookings, events, inTransaction }, id, { state: 'cancelled', cancelledAt, lateCancel: late },
+    eventOf(id, 'cancelled', cancelledAt, { late }));
   return { bookingId: id, state: 'cancelled', cancelledAt: iso(cancelledAt), late };
 }
 
-function makeBookingService({ bookings, grounds, settings, clock }) {
-  /** A club asks for a slot: a requested booking, held for HOLD_HOURS from now, unless its shadow clashes. */
-  async function request({ ground: code, event, from, to, club }) {
-    const ground = await grounds.ground(VENUE, code);
-    if (!ground) throw new NoSuchGround(code);
-    const type = await grounds.eventType(VENUE, event);
-    if (!type) throw new NoSuchEventType(event);
-    const fromAt = wholeSecond(new Date(from));
-    const toAt = wholeSecond(new Date(to));
-    const requestedAt = wholeSecond(clock.now());
-    checkInterval({ ground, type, now: requestedAt }, fromAt, toAt);
-    await refuseClashes({ bookings, grounds }, { bookingId: null, groundId: code, fromAt, toAt, type }, requestedAt);
-    const holdUntil = new Date(requestedAt.getTime() + settings.holdHours * 60 * MINUTE);
-    const requested = {
-      bookingId: await bookings.nextId(VENUE), venueId: VENUE, groundId: code, eventTypeId: event, clubName: club, fromAt, toAt,
-      state: 'requested', requestedAt, holdUntil,
-    };
-    await bookings.insert(requested);
-    return { ...shape(requested, type), holdUntil: iso(holdUntil) };
-  }
+/**
+ * A club asks for a slot: a requested booking, held for HOLD_HOURS from now, unless its shadow clashes. The booking and
+ * its requested event are one transaction.
+ */
+async function requestBooking({ bookings, grounds, events, settings, clock, inTransaction }, { ground: code, event, from, to, club }) {
+  const ground = await grounds.ground(VENUE, code);
+  if (!ground) throw new NoSuchGround(code);
+  const type = await grounds.eventType(VENUE, event);
+  if (!type) throw new NoSuchEventType(event);
+  const fromAt = wholeSecond(new Date(from));
+  const toAt = wholeSecond(new Date(to));
+  const requestedAt = wholeSecond(clock.now());
+  checkInterval({ ground, type, now: requestedAt }, fromAt, toAt);
+  await refuseClashes({ bookings, grounds }, { bookingId: null, groundId: code, fromAt, toAt, type }, requestedAt);
+  const holdUntil = new Date(requestedAt.getTime() + settings.holdHours * 60 * MINUTE);
+  const requested = {
+    bookingId: await bookings.nextId(VENUE), venueId: VENUE, groundId: code, eventTypeId: event, clubName: club, fromAt, toAt,
+    state: 'requested', requestedAt, holdUntil,
+  };
+  await inTransaction(async (session) => {
+    await bookings.insert(requested, session);
+    await events.record(eventOf(requested.bookingId, 'requested', requestedAt, { from: fromAt, to: toAt }), session);
+  });
+  return { ...shape(requested, type), holdUntil: iso(holdUntil) };
+}
 
+function makeBookingService(deps) {
+  const { bookings, grounds, events } = deps;
+
+  /** A booking with its shadow and its whole history, in `at` order: the only history shown. */
   async function booking(id) {
     const found = await requireBooking(bookings, id);
-    return shape(found, await grounds.eventType(VENUE, found.eventTypeId));
+    const history = (await events.forBooking(VENUE, id)).map(line);
+    return { ...shape(found, await grounds.eventType(VENUE, found.eventTypeId)), events: history };
   }
 
   return {
-    request,
+    request: (body) => requestBooking(deps, body),
     booking,
-    confirm: (id) => confirmBooking({ bookings, grounds, clock }, id),
-    cancel: (id) => cancelBooking({ bookings, clock }, id),
+    confirm: (id) => confirmBooking(deps, id),
+    cancel: (id) => cancelBooking(deps, id),
   };
 }
 
-module.exports = { makeBookingService, shadowOf, shape, checkInterval, refuseClashes, requireBooking };
+module.exports = { makeBookingService, shadowOf, shape, checkInterval, refuseClashes, requireBooking, eventOf };
