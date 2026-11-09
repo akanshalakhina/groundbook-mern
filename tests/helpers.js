@@ -1,5 +1,5 @@
 'use strict';
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const request = require('supertest');
 const { connect, disconnect } = require('../src/db');
 const { seed } = require('../src/seed');
@@ -9,14 +9,17 @@ const { loadSettings } = require('../src/settings');
 /** A fixed clock: every test runs at the same moment (Thursday morning, when Rafi rings about Saturday). */
 const clock = { now: () => new Date('2026-10-01T08:00:00Z') };
 
-/** An in-memory MongoDB for one test file: start() connects and seeds; api() is Supertest on a fresh app. */
+/**
+ * An in-memory MongoDB for one test file. Transactions need a replica set, so it is a one-member replica set.
+ * start() connects and seeds; api() is Supertest on a fresh app; stop() closes everything.
+ */
 function testDatabase(name) {
   let mongo;
   const settings = loadSettings();
   return {
     settings,
     async start() {
-      mongo = await MongoMemoryServer.create();
+      mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
       await connect(mongo.getUri(name));
       await seed({ settings, clock });
     },

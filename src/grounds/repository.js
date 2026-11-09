@@ -44,16 +44,17 @@ function groundsOf(venueId) {
   return Ground.find({ venueId }).sort({ code: 1 }).lean();
 }
 
-function ground(venueId, code) {
-  return Ground.findOne({ venueId, code }).lean();
+/** Reads that a transaction may run: given its session, they read inside it. */
+function ground(venueId, code, session) {
+  return Ground.findOne({ venueId, code }).session(session).lean();
 }
 
-function eventTypesOf(venueId) {
-  return EventType.find({ venueId }).lean();
+function eventTypesOf(venueId, session) {
+  return EventType.find({ venueId }).session(session).lean();
 }
 
-function eventType(venueId, code) {
-  return EventType.findOne({ venueId, code }).lean();
+function eventType(venueId, code, session) {
+  return EventType.findOne({ venueId, code }).session(session).lean();
 }
 
 module.exports = { venueExists, addVenue, groundsOf, ground, eventTypesOf, eventType };

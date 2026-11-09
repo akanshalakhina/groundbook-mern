@@ -26,10 +26,10 @@ function clash(a, b) {
  * Refuses a booking whose shadow clashes with a live booking's on the same ground and date (leaving itself out),
  * naming each clashing booking and the range it holds. The buffers are read from the event types now.
  */
-async function refuseClashes({ bookings, grounds }, { bookingId, groundId, fromAt, toAt, type }, now) {
+async function refuseClashes({ bookings, grounds }, { bookingId, groundId, fromAt, toAt, type }, now, session) {
   const mine = shadowOf(fromAt, toAt, type);
-  const types = new Map((await grounds.eventTypesOf(VENUE)).map((t) => [t.code, t]));
-  const others = await bookings.liveOnDay(VENUE, groundId, iso(fromAt).slice(0, 10), now, bookingId);
+  const types = new Map((await grounds.eventTypesOf(VENUE, session)).map((t) => [t.code, t]));
+  const others = await bookings.liveOnDay(VENUE, groundId, iso(fromAt).slice(0, 10), now, bookingId, session);
   const clashing = others.map((o) => ({ o, held: shadowOf(o.fromAt, o.toAt, types.get(o.eventTypeId)) }))
     .filter(({ held }) => clash(mine, held));
   if (clashing.length) {
@@ -73,8 +73,8 @@ function checkInterval({ ground, type, now }, fromAt, toAt) {
   }
 }
 
-async function requireBooking(bookings, id) {
-  const found = await bookings.byId(VENUE, id);
+async function requireBooking(bookings, id, session) {
+  const found = await bookings.byId(VENUE, id, session);
   if (!found) throw new NoSuchBooking(id);
   return found;
 }
@@ -143,4 +143,4 @@ function makeBookingService({ bookings, grounds, settings, clock }) {
   };
 }
 
-module.exports = { makeBookingService, shadowOf, shape };
+module.exports = { makeBookingService, shadowOf, shape, checkInterval, refuseClashes, requireBooking };

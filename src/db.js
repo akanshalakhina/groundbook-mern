@@ -14,4 +14,21 @@ async function disconnect() {
   await mongoose.disconnect();
 }
 
-module.exports = { connect, disconnect };
+/**
+ * Runs work(session) in one MongoDB transaction: every read and write inside must be given the session. If any of
+ * them fails, nothing of it is kept.
+ */
+async function inTransaction(work) {
+  const session = await mongoose.startSession();
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      result = await work(session);
+    });
+    return result;
+  } finally {
+    await session.endSession();
+  }
+}
+
+module.exports = { connect, disconnect, inTransaction };

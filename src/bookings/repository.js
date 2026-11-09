@@ -12,6 +12,9 @@ const Booking = mongoose.model('Booking', new mongoose.Schema({
   state: { type: String, enum: ['requested', 'confirmed', 'cancelled', 'expired'], required: true },
   requestedAt: { type: Date, required: true },
   holdUntil: { type: Date, required: true },
+  movedAt: { type: Date, default: null },
+  previousFrom: { type: Date, default: null },
+  previousTo: { type: Date, default: null },
   confirmedAt: { type: Date, default: null },
   cancelledAt: { type: Date, default: null },
   lateCancel: { type: Boolean, default: false },
@@ -27,13 +30,13 @@ async function insert(booking) {
   await Booking.create(booking);
 }
 
-function byId(venueId, bookingId) {
-  return Booking.findOne({ venueId, bookingId }).lean();
+function byId(venueId, bookingId, session) {
+  return Booking.findOne({ venueId, bookingId }).session(session).lean();
 }
 
-/** A transition: the booking's new state and the fields stamped with it. */
-async function stamp(bookingId, fields) {
-  await Booking.updateOne({ bookingId }, { $set: fields });
+/** A change of the booking document (a transition or a move); inside a transaction when given its session. */
+async function stamp(bookingId, fields, session) {
+  await Booking.updateOne({ bookingId }, { $set: fields }, { session });
 }
 
 /** The day's start and the next day's, for a date read in UTC. */
@@ -46,11 +49,11 @@ function dayRange(date) {
  * The live bookings on a ground and date, leaving out one booking: confirmed ones, and requested ones whose hold has not
  * passed. One query.
  */
-function liveOnDay(venueId, groundId, date, now, exceptId) {
+function liveOnDay(venueId, groundId, date, now, exceptId, session) {
   return Booking.find({
     venueId, groundId, fromAt: dayRange(date), bookingId: { $ne: exceptId },
     $or: [{ state: 'confirmed' }, { state: 'requested', holdUntil: { $gte: now } }],
-  }).lean();
+  }).session(session).lean();
 }
 
 /** A ground's bookings that start on this date (UTC), in `from` order. */
