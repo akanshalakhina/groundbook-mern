@@ -1,7 +1,8 @@
 'use strict';
 const express = require('express');
 const swaggerUi = require('swagger-ui-express');
-const { inTransaction } = require('./db');
+const db = require('./db');
+const log = require('./log');
 const { document } = require('./openapi');
 const groundRepository = require('./grounds/repository');
 const { makeGroundService } = require('./grounds/service');
@@ -13,10 +14,12 @@ const { makeBookingRouter } = require('./bookings/router');
 const { makeMoveService } = require('./moves/service');
 const { makeMoveRouter } = require('./moves/router');
 const { makeLastRoute, errorHandler } = require('./errors/middleware');
+const { Unavailable } = require('./errors');
 
 /** Builds the Express app. It never connects to the database and never listens: server.js and tests do that. */
 function createApp({ settings, clock }) {
   const app = express();
+  const { inTransaction } = db;
   const grounds = makeGroundService({ repository: groundRepository, bookings: bookingRepository, settings, clock });
   const bookings = makeBookingService({
     bookings: bookingRepository, grounds: groundRepository, events: eventRepository, settings, clock, inTransaction,
@@ -25,12 +28,20 @@ function createApp({ settings, clock }) {
     bookings: bookingRepository, grounds: groundRepository, events: eventRepository, clock, inTransaction,
   });
 
+  app.use(log.requests);
   app.use(express.json());
   app.get('/openapi.json', (req, res) => res.json(document));
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(document));
   app.use(makeGroundRouter(grounds));
   app.use(makeBookingRouter(bookings));
   app.use(makeMoveRouter(moves));
+  // Up only while the database answers: a container check can trust it.
+  app.get('/healthz', async (req, res) => {
+    await db.ping().catch(() => {
+      throw new Unavailable();
+    });
+    res.json({ status: 'ok' });
+  });
   app.use(makeLastRoute(document.paths));
   app.use(errorHandler);
   return app;

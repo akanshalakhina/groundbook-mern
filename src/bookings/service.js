@@ -5,6 +5,7 @@ const {
 } = require('../errors');
 const { hoursOn } = require('../grounds/hours');
 const { wholeSecond, iso } = require('../time');
+const log = require('../log');
 
 const VENUE = 'deccan';
 const MINUTE = 60 * 1000;
@@ -23,11 +24,12 @@ function line(event) {
 }
 
 /** Changes the booking and writes the change's event, in one transaction. */
-function stampWithEvent({ bookings, events, inTransaction }, id, fields, event) {
-  return inTransaction(async (session) => {
+async function stampWithEvent({ bookings, events, inTransaction }, id, fields, event) {
+  await inTransaction(async (session) => {
     await bookings.stamp(id, fields, session);
     await events.record(event, session);
   });
+  log.event(event.kind, id);
 }
 
 /** The ground is held from the setup before the event to the teardown after it. Derived on every read, never stored. */
@@ -155,6 +157,7 @@ async function requestBooking({ bookings, grounds, events, settings, clock, inTr
     await bookings.insert(requested, session);
     await events.record(eventOf(requested.bookingId, 'requested', requestedAt, { from: fromAt, to: toAt }), session);
   });
+  log.event('requested', requested.bookingId);
   return { ...shape(requested, type), holdUntil: iso(holdUntil) };
 }
 

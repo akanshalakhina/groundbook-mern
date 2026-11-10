@@ -2,6 +2,7 @@
 const { AlreadyStarted, Cancelled } = require('../errors');
 const { shadowOf, checkInterval, refuseClashes, requireBooking, eventOf } = require('../bookings/service');
 const { wholeSecond, iso } = require('../time');
+const log = require('../log');
 
 const VENUE = 'deccan';
 
@@ -12,7 +13,7 @@ function makeMoveService({ bookings, grounds, events, clock, inTransaction }) {
    * transaction, so a failure leaves the booking exactly where it was. The state is kept.
    */
   async function move(id, { from, to }) {
-    return inTransaction(async (session) => {
+    const moved = await inTransaction(async (session) => {
       const b = await requireBooking(bookings, id, session);
       if (b.state === 'cancelled') throw new Cancelled();
       const movedAt = wholeSecond(clock.now());
@@ -33,6 +34,8 @@ function makeMoveService({ bookings, grounds, events, clock, inTransaction }) {
         movedAt: iso(movedAt),
       };
     });
+    log.event('moved', id);
+    return moved;
   }
 
   return { move };

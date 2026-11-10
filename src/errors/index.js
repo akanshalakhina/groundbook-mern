@@ -105,7 +105,13 @@ class Overlap extends DomainError {
   }
 }
 
+class Unavailable extends DomainError {
+  constructor() {
+    super(503, '/errors/unavailable', 'Unavailable', 'The database cannot be reached');
+  }
+}
+
 module.exports = {
   DomainError, ValidationError, NoSuchVenue, NoSuchGround, NoSuchEventType, NoSuchBooking, BadInterval, AlreadyStarted,
-  Cancelled, AlreadyConfirmed, AlreadyOver, AlreadyCancelled, Overlap,
+  Cancelled, AlreadyConfirmed, AlreadyOver, AlreadyCancelled, Overlap, Unavailable,
 };

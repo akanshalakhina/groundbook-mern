@@ -31,4 +31,9 @@ async function inTransaction(work) {
   }
 }
 
-module.exports = { connect, disconnect, inTransaction };
+/** Asks MongoDB whether it is there; rejects when it is not. */
+async function ping() {
+  await mongoose.connection.db.admin().ping();
+}
+
+module.exports = { connect, disconnect, inTransaction, ping };
